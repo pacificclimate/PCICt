@@ -21,6 +21,8 @@
 origin.year <- 1970
 origin.year.POSIXlt <- 1900
 
+setOldClass("PCICt")
+
 PCICt.get.months <- function(cal) {
   m.365 <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
   m.360 <- c(30, 28, 31, 30, 30, 30, 30, 31, 30, 30, 30, 30)
