@@ -26,22 +26,41 @@ setOldClass("PCICt")
 PCICt.get.months <- function(cal) {
   m.365 <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
   m.360 <- c(30, 28, 31, 30, 30, 30, 30, 31, 30, 30, 30, 30)
-  switch(cal, "365_day"=m.365, "360_day"=m.360)
+  switch(cal, "365_day"=m.365, "360_day"=m.360, "365"=m.365, "360"=m.360)
 }
 
 .PCICt <- function(x, cal) {
-  structure(x, cal=cal, months=PCICt.get.months(cal), class=c("PCICt", "POSIXct", "POSIXt"), dpy=switch(cal, "365_day"=365, "360_day"=360), tzone="GMT")
+  structure(x, cal=cal, months=PCICt.get.months(cal), class=c("PCICt", "POSIXct", "POSIXt"), dpy=switch(cal, "365_day"=365, "360_day"=360, "365"=365, "360"=360), tzone="GMT", units="secs")
+}
+
+range.PCICt <- function(..., na.rm=FALSE) {
+  stopifnot(length(unique(lapply(..., function(x) { attr(x, "cal") }))) == 1)
+  args <- unclass(c(...))
+  ret <- c(min(args, na.rm=na.rm), max(args, na.rm=na.rm))
+  copy.atts.PCICt(..1, ret)
+  class(ret) <- c("PCICt", "POSIXct", "POSIXt")
+  return(ret)
 }
 
 c.PCICt <- function(..., recursive=FALSE) {
+  ##stopifnot(length(unique(lapply(..., function(x) { attr(x, "cal") }))) == 1)
   cal <- attr(..1, "cal")
   .PCICt(c(unlist(lapply(list(...), unclass))), cal)
 }
 
-Ops.PCICt <- function (e1, e2){
-  stopifnot(attr(from, "cal") == attr(to, "cal"))
-  class(e1) <- class(e2) <- c("POSIXct", "POSIXt")
-  NextMethod(e1, e2)
+`+.PCICt` <- `-.PCICt` <- Ops.PCICt <- function (e1, e2){
+  cal <- attr(e1, "cal")
+  if(inherits(e2, "POSIXt")) {
+    stopifnot(inherits(e2, "PCICt") & attr(e1, "cal") == attr(e2, "cal"))
+    class(e2) <- c("POSIXct", "POSIXt")
+  }
+  class(e1) <- c("POSIXct", "POSIXt")
+  x <- NextMethod()
+  if(inherits(x, "POSIXct")) {
+    x <- copy.atts.PCICt(e1, x)
+    class(x) <- c("PCICt", "POSIXct", "POSIXt")
+  }
+  return(x)
 }
 
 rep.PCICt <- function(x, ...) {
@@ -69,8 +88,7 @@ trunc.PCICt <- function(x, units = c("secs", "mins", "hours", "days"), ...) {
 }
 
 copy.atts.PCICt <- function(from, to) {
-  attributes(to) <- attributes(from)
-  return(to)
+  return(structure(to, cal=attr(from, "cal"), months=attr(from, "months"), class=class(from), dpy=attr(from, "dpy"), tzone=attr(from, "tzone"), units=attr(from, "units")))
 }
 
 `[.PCICt` <- function(x, ...) {
@@ -112,7 +130,7 @@ as.PCICt.default <- function(x, cal, ...) {
 
 as.PCICt.POSIXlt <- function(x, cal, ...) {
   tz <- "GMT"
-  year.length <- switch(cal, "360_day"=360, "365_day"=365, "gregorian"=NULL)
+  year.length <- switch(cal, "360_day"=360, "365_day"=365, "365"=365, "360"=360, "gregorian"=NULL)
   if(is.null(year.length)) {
     d <- as.POSIXct(x, tz="GMT")
     class(d) <- NULL
