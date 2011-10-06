@@ -13,15 +13,19 @@
 ##[13] rep.POSIXct            split.POSIXct          Summary.POSIXct
 ##[16] summary.POSIXct        weighted.mean.POSIXct* xtfrm.POSIXct
 
-
-## Stuff to do:
-## - Axis.POSIXt / axis.POSIXct
-## 
-
 origin.year <- 1970
 origin.year.POSIXlt <- 1900
 
 setOldClass("PCICt")
+
+## TODO:
+## - Implement axis functions (Axis.POSIXt/axis.POSIXct) so that plots will line up nicely
+## - S4 class to avoid stripping of attributes?
+## - Proleptic gregorian?
+## - Document 360-day calendar
+## - Ensure origin.year etc are part of this namespace and don't leak out
+## - Document difficulties / problems with R functions stripping attributes
+## - Add proper error message in .PCICt when 'cal' is missing
 
 PCICt.get.months <- function(cal) {
   m.365 <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
@@ -30,14 +34,17 @@ PCICt.get.months <- function(cal) {
 }
 
 .PCICt <- function(x, cal) {
+  if(missing(cal)) stop("Can't create a PCICt with no calendar type")
+  ## FIXME: Add check for missing calendar
   structure(x, cal=cal, months=PCICt.get.months(cal), class=c("PCICt", "POSIXct", "POSIXt"), dpy=switch(cal, "365_day"=365, "360_day"=360, "365"=365, "360"=360), tzone="GMT", units="secs")
 }
 
 range.PCICt <- function(..., na.rm=FALSE) {
-  stopifnot(length(unique(lapply(..., function(x) { attr(x, "cal") }))) == 1)
-  args <- unclass(c(...))
-  ret <- c(min(args, na.rm=na.rm), max(args, na.rm=na.rm))
-  copy.atts.PCICt(..1, ret)
+  args <- list(...)
+  stopifnot(length(unique(lapply(args, function(x) { attr(x, "cal") }))) == 1)
+  args.flat <- unlist(args)
+  ret <- c(min(args.flat, na.rm=na.rm), max(args.flat, na.rm=na.rm))
+  ret <- copy.atts.PCICt(args[[1]], ret)
   class(ret) <- c("PCICt", "POSIXct", "POSIXt")
   return(ret)
 }
@@ -48,6 +55,7 @@ c.PCICt <- function(..., recursive=FALSE) {
   .PCICt(c(unlist(lapply(list(...), unclass))), cal)
 }
 
+## FIXME: Broken for difftime objects
 `+.PCICt` <- `-.PCICt` <- Ops.PCICt <- function (e1, e2){
   cal <- attr(e1, "cal")
   if(inherits(e2, "POSIXt")) {
@@ -121,8 +129,14 @@ as.PCICt.default <- function(x, cal, ...) {
   tz <- "GMT"
   if (inherits(x, "PCICt"))
     return(x)
-  if (is.character(x) || is.factor(x))
+  if (is.character(x) || is.factor(x)) {
+    ## This is a specific hack to get around 30-days-per-month 360-day calendars.
+    x <- as.character(x)
+    if(cal == "360" || cal == "360_day")
+      x <- gsub("([0-9]+)-02-29", "\\1-03-01", gsub("([0-9]+)-02-30", "\\1-03-02", x))
+
     return(as.PCICt(as.POSIXlt(x, tz, ...), cal, ...))
+  }
   if (is.logical(x) && all(is.na(x)))
     return(.PCICt(as.numeric(x), cal))
   stop(gettextf("do not know how to convert '%s' to class \"PCICt\"", deparse(substitute(x))))
@@ -130,7 +144,9 @@ as.PCICt.default <- function(x, cal, ...) {
 
 as.PCICt.POSIXlt <- function(x, cal, ...) {
   tz <- "GMT"
-  year.length <- switch(cal, "360_day"=360, "365_day"=365, "365"=365, "360"=360, "gregorian"=NULL)
+  year.length <- switch(cal, "360_day"=360, "365_day"=365, "365"=365, "360"=360, "noleap"=365, "gregorian"=NULL, "proleptic_gregorian"=NULL)
+  ## Warning about proleptic gregorian
+  if(cal == "proleptic_gregorian") warning("Proleptic gregorian is implemented as gregorian, which is off by 3+ days. Make sure you know what you are doing here.")
   if(is.null(year.length)) {
     d <- as.POSIXct(x, tz="GMT")
     class(d) <- NULL
