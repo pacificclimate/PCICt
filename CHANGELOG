@@ -1,0 +1,3 @@
+0.2-1: Cleaned up comments in code, added as.PCICt.POSIXct, added documentation for it, added more examples.
+
+0.1-2: Initial version.
