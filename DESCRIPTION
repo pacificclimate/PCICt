@@ -1,5 +1,5 @@
 Package: PCICt
-Version: 0.3-2
+Version: 0.4-1
 Date: 2011-11-10
 Title: Implementation of POSIXct work-alike for 365 and 360 day calendars.
 Author: David Bronaugh <bronaugh@uvic.ca> for the Pacific Climate Impacts Consortium (PCIC)

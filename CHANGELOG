@@ -1,3 +1,5 @@
+0.4-1: Add support for proleptic gregorian calendar.
+
 0.3-2: Fix off-by-one with Julian days.
 
 0.3-1: Add min.PCICt and max.PCICt.

@@ -134,19 +134,26 @@ as.PCICt.default <- function(x, cal, ...) {
 }
 
 as.PCICt.POSIXlt <- function(x, cal, ...) {
+  proleptic.correction <- 0
+  seconds.per.day <- 86400
   tz <- "GMT"
-  year.length <- switch(cal, "360_day"=360, "365_day"=365, "365"=365, "360"=360, "noleap"=365, "gregorian"=NULL, "proleptic_gregorian"=NULL)
+  year.length <- switch(cal, "360_day"=360, "365_day"=365, "365"=365, "360"=360, "noleap"=365, "gregorian"=NULL, "proleptic_gregorian"=NULL, "standard"=NULL)
   ## FIXME: Add check for sane calendar type.
-  ## Warning about proleptic gregorian
-  if(cal == "proleptic_gregorian") warning("Proleptic gregorian is implemented as gregorian, which is off by 3+ days. Make sure you know what you are doing here.")
+
+  ## Correct calendar output if proleptic gregorian
+  if(cal == "proleptic_gregorian") {
+    year.adjusted <- x$year + as.numeric(x$month >= 3) - 1
+    diff.days <- floor(year.adjusted / 100) - floor(year.adjusted / 400) - 2
+    diff.days[x$year >= 1582 & x$month >= 10 & x$day >= 4] <- 0
+    proleptic.correction <- diff.days * seconds.per.day
+  }
   if(is.null(year.length)) {
     d <- as.POSIXct(x, tz="GMT")
     class(d) <- NULL
-    return(.PCICt(d, "gregorian"))
+    return(.PCICt(d + proleptic.correction, "gregorian"))
   } else {
     months <- PCICt.get.months(cal)
     months.off <- cumsum(c(0, months[1:(length(months) - 1)]))
-    seconds.per.day <- 86400
     seconds.per.hour <- 3600
     return(.PCICt((x$year + origin.year.POSIXlt - origin.year) * year.length * seconds.per.day +
                   months.off[x$mon + 1] * seconds.per.day + (x$mday - 1) * seconds.per.day + x$hour * seconds.per.hour + x$min * 60 + x$sec, cal=cal))
