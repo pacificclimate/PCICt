@@ -6,7 +6,6 @@ setOldClass("PCICt")
 ## TODO:
 ## - Implement axis functions (Axis.POSIXt/axis.POSIXct) so that plots will line up nicely
 ## - S4 class to avoid stripping of attributes?
-## - Proleptic gregorian?
 
 PCICt.get.months <- function(cal) {
   m.365 <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
@@ -127,6 +126,18 @@ as.character.PCICt <- function(x, ...) {
   }
 }
 
+summary.PCICt <- function (object, digits = 15, ...) {
+  x <- summary.default(unclass(object), digits = digits, ...)
+  if (m <- match("NA's", names(x), 0)) {
+    NAs <- as.integer(x[m])
+    x <- x[-m]
+    attr(x, "NAs") <- NAs
+  }
+  x <- copy.atts.PCICt(object, x)
+  class(x) <- c("summaryDefault", "table", oldClass(object))
+  x
+}
+
 format.PCICt <- function(x, format="", tz="", usetz=FALSE, ...) {
   if (!inherits(x, "PCICt"))
     stop("wrong class")
@@ -142,7 +153,7 @@ format.PCICt <- function(x, format="", tz="", usetz=FALSE, ...) {
 print.PCICt <- function (x, ...) {
   max.print <- getOption("max.print", 9999L)
   if (max.print < length(x)) {
-    print(as.character(x[1:(max.print + 1)]), ...)
+    print(as.character(x[1:max.print]), ...)
     cat(" [ reached getOption(\"max.print\") -- omitted",
         length(x) - max.print, "entries ]\n")
   }
