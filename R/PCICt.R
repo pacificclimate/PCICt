@@ -10,7 +10,7 @@ setOldClass("PCICt")
 
 PCICt.get.months <- function(cal) {
   m.365 <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
-  m.360 <- c(30, 28, 31, 30, 30, 30, 30, 31, 30, 30, 30, 30)
+  m.360 <- c(30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30)
   switch(cal, "365_day"=m.365, "360_day"=m.360, "365"=m.365, "360"=m.360)
 }
 
@@ -80,10 +80,12 @@ seq.PCICt <- function(from, to, by, length.out = NULL, along.with = NULL, ...) {
 }
 
 trunc.PCICt <- function(x, units = c("secs", "mins", "hours", "days"), ...) {
-  class(x) <- c("POSIXct", "POSIXt")
-  ret <- as.POSIXct(NextMethod())
-  class(ret) <- NULL
-  return(.PCICt(ret, cal=attr(x, "cal")))
+      units <- match.arg(units)
+      val <- unclass(x)
+      round.to <- switch(units, secs = 1, mins = 60, hours = 3600, days = 86400)
+      val <- floor(val / round.to) * round.to
+      class(val) <- class(x)
+      return(copy.atts.PCICt(x, val))
 }
 
 copy.atts.PCICt <- function(from, to) {
@@ -116,21 +118,116 @@ as.PCICt <- function(x, cal, ...) {
   UseMethod("as.PCICt")
 }
 
+as.character.PCICt <- function(x, ...) {
+  if(attr(x, "dpy") == 360) {
+    format.POSIXlt.360(as.POSIXlt(x), ...)
+  } else {
+    x <- NextMethod()
+    x
+  }
+}
+
+format.PCICt <- function(x, format="", tz="", usetz=FALSE, ...) {
+  if (!inherits(x, "PCICt"))
+    stop("wrong class")
+  if(attr(x, "dpy") == 360) {
+    structure(format.POSIXlt.360(as.POSIXlt(x, tz), format,
+                             ...), names = names(x))
+  } else {
+    structure(format.POSIXlt(as.POSIXlt(x, tz), format, usetz,
+                             ...), names = names(x))
+  }
+}
+
+print.PCICt <- function (x, ...) {
+  max.print <- getOption("max.print", 9999L)
+  if (max.print < length(x)) {
+    print(as.character(x[1:(max.print + 1)]), ...)
+    cat(" [ reached getOption(\"max.print\") -- omitted",
+        length(x) - max.print, "entries ]\n")
+  }
+  else print(as.character(x), ...)
+  invisible(x)
+}
+
+
+strptime.360 <- function(x, format) {
+  .Call("do_strptime_360", x, format)
+}
+
+format.POSIXlt.360 <- function(x, format="") {
+  if (!inherits(x, "POSIXlt"))
+    stop("wrong class")
+  if (format == "") {
+    times <- unlist(unclass(x)[1L:3L])
+    secs <- x$sec
+    secs <- secs[!is.na(secs)]
+    np <- getOption("digits.secs")
+    if (is.null(np))
+      np <- 0L
+    else np <- min(6L, np)
+    if (np >= 1L)
+      for (i in seq <- length(np) - 1L) if (all(abs(secs - round(secs, i)) < 1e-06)) {
+        np <- i
+        break
+      }
+    format <- if (all(times[!is.na(times)] == 0))
+      "%Y-%m-%d"
+    else if (np == 0L)
+      "%Y-%m-%d %H:%M:%S"
+    else paste0("%Y-%m-%d %H:%M:%OS", np)
+  }
+  y <- .Call("do_formatPOSIXlt_360", x, format)
+  names(y) <- names(x$year)
+  y
+  
+}
+
+as.POSIXct.POSIXlt.360 <- function(x) {
+  .Call("do_asPOSIXct_360", x, format)
+}
+
+as.POSIXlt.POSIXct.360 <- function(x) {
+  .Call("do_asPOSIXlt_360", x, format)
+}
+
 as.PCICt.default <- function(x, cal, ...) {
   tz <- "GMT"
   if (inherits(x, "PCICt"))
     return(x)
   if (is.character(x) || is.factor(x)) {
-    ## This is a specific hack to get around 30-days-per-month 360-day calendars.
     x <- as.character(x)
-    if(cal == "360" || cal == "360_day")
-      x <- gsub("([0-9]+)-02-29", "\\1-03-01", gsub("([0-9]+)-02-30", "\\1-03-02", x))
-
-    return(as.PCICt(as.POSIXlt(x, tz, ...), cal, ...))
+    if(cal == "360" || cal == "360_day") {
+      x <- unclass(x)
+      xx <- x[!is.na(x)]
+      if (!length(xx))
+        res <- strptime(x, "%Y/%m/%d")
+      else if (all(!is.na(strptime.360(xx, f <- "%Y-%m-%d %H:%M:%OS"))) ||
+               all(!is.na(strptime.360(xx, f <- "%Y/%m/%d %H:%M:%OS"))) ||
+               all(!is.na(strptime.360(xx, f <- "%Y-%m-%d %H:%M"))) ||
+               all(!is.na(strptime.360(xx, f <- "%Y/%m/%d %H:%M"))) ||
+               all(!is.na(strptime.360(xx, f <- "%Y-%m-%d"))) ||
+               all(!is.na(strptime.360(xx, f <- "%Y/%m/%d"))))
+        res <- strptime.360(x, f)
+      attr(res, "tzone") <- tz
+      return(as.PCICt(res, cal, ...))
+    } else {
+      return(as.PCICt(as.POSIXlt(x, tz, ...), cal, ...))
+    }
   }
   if (is.logical(x) && all(is.na(x)))
     return(.PCICt(as.numeric(x), cal))
   stop(gettextf("do not know how to convert '%s' to class \"PCICt\"", deparse(substitute(x))))
+}
+
+as.PCICt.numeric <- function(x, cal, origin, ...) {
+  if (missing(origin))
+    stop("'origin' must be supplied")
+
+  if(inherits(origin, "PCICt") && attr(origin, "cal") == cal)
+    return(origin + x)
+  else
+    return(as.PCICt(origin, cal) + x)
 }
 
 as.PCICt.POSIXlt <- function(x, cal, ...) {
@@ -142,9 +239,9 @@ as.PCICt.POSIXlt <- function(x, cal, ...) {
 
   ## Correct calendar output if proleptic gregorian
   if(cal == "proleptic_gregorian") {
-    year.adjusted <- x$year + as.numeric(x$month >= 3) - 1
+    year.adjusted <- x$year + origin.year.POSIXlt + as.numeric(x$mon >= 3) - 1
     diff.days <- floor(year.adjusted / 100) - floor(year.adjusted / 400) - 2
-    diff.days[x$year >= 1582 & x$month >= 10 & x$day >= 4] <- 0
+    diff.days[x$year >= 1582 & x$mon >= 10 & x$day >= 4] <- 0
     proleptic.correction <- diff.days * seconds.per.day
   }
   if(is.null(year.length)) {
@@ -161,7 +258,11 @@ as.PCICt.POSIXlt <- function(x, cal, ...) {
 }
 
 as.PCICt.POSIXct <- function(x, cal, ...) {
-  as.PCICt.POSIXlt(as.POSIXlt(x), cal, ...)
+  if(cal == "360" || cal == "360_day") {
+    as.PCICt.POSIXlt(as.POSIXlt.POSIXct.360(x), cal, ...)
+  } else {
+    as.PCICt.POSIXlt(as.POSIXlt(x), cal, ...)
+  }
 }
 
 as.POSIXlt.PCICt <- function(x, tz="", ...) {
@@ -200,10 +301,15 @@ as.POSIXlt.PCICt <- function(x, tz="", ...) {
 }
 
 as.POSIXct.PCICt <- function(x, tz="", ...) {
+  if(attr(x, "cal") == "360" || attr(x, "cal") == "360_day") {
+    warning("360-day PCICt objects can't be properly represented by a POSIXct object")
+  }
   return(as.POSIXct(as.POSIXlt(x, tz)))
 }
 
 cut.PCICt <- function (x, breaks, labels = NULL, start.on.monday = TRUE, right = FALSE, ...) {
+  stopifnot(attr(x, "cal") != "360" && attr(x, "cal") != "360_day");
+
   cut.POSIXt(as.POSIXct(x), breaks, labels, start.on.monday, right, ...)
 }
 

@@ -1,10 +1,10 @@
 Package: PCICt
-Version: 0.4-1
-Date: 2011-11-10
+Version: 0.5-1
+Date: 2012-05-01
 Title: Implementation of POSIXct work-alike for 365 and 360 day calendars.
 Author: David Bronaugh <bronaugh@uvic.ca> for the Pacific Climate Impacts Consortium (PCIC)
 Maintainer: David Bronaugh <bronaugh@uvic.ca>
-Depends: R (>= 2.10.0), methods
+Depends: R (>= 2.12.0), methods
 Suggests: 
 Description: This package implements a work-alike to R's POSIXct class which implements 360- and 365-day calendars in addition to the gregorian calendar.
 License: LGPL-2.1
