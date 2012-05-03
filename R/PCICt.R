@@ -13,10 +13,14 @@ PCICt.get.months <- function(cal) {
   switch(cal, "365_day"=m.365, "360_day"=m.360, "365"=m.365, "360"=m.360)
 }
 
+dpy.for.cal <- function(cal) {
+  switch(cal, "365_day"=365, "360_day"=360, "365"=365, "360"=360)
+}
+
 .PCICt <- function(x, cal) {
   if(missing(cal)) stop("Can't create a PCICt with no calendar type")
   ## FIXME: Add check for sane calendar type.
-  structure(x, cal=cal, months=PCICt.get.months(cal), class=c("PCICt", "POSIXct", "POSIXt"), dpy=switch(cal, "365_day"=365, "360_day"=360, "365"=365, "360"=360), tzone="GMT", units="secs")
+  structure(x, cal=cal, months=PCICt.get.months(cal), class=c("PCICt", "POSIXct", "POSIXt"), dpy=dpy.for.cal(cal), tzone="GMT", units="secs")
 }
 
 range.PCICt <- function(..., na.rm=FALSE) {
@@ -72,10 +76,109 @@ max.PCICt <- function(x, ...) {
 
 seq.PCICt <- function(from, to, by, length.out = NULL, along.with = NULL, ...) {
   stopifnot(attr(from, "cal") == attr(to, "cal"))
-  class(from) <- class(to) <- c("POSIXct", "POSIXt")
-  ret <- NextMethod()
-  class(ret) <- NULL
-  return(.PCICt(ret, cal=attr(from, "cal")))
+  if (missing(from))
+    stop("'from' must be specified")
+  if (!inherits(from, "PCICt"))
+    stop("'from' must be a PCICt object")
+  if (length(from) != 1L)
+    stop("'from' must be of length 1")
+  if (!missing(to)) {
+    if (!inherits(to, "PCICt"))
+      stop("'to' must be a PCICt object")
+    if (length(to) != 1)
+      stop("'to' must be of length 1")
+    if(to < from)
+      stop("'to' must be less than 'from'")
+  }
+  if (!missing(along.with)) {
+    length.out <- length(along.with)
+  }
+  else if (!is.null(length.out)) {
+    if (length(length.out) != 1L)
+      stop("'length.out' must be of length 1")
+    length.out <- ceiling(length.out)
+  }
+  status <- c(!missing(to), !missing(by), !is.null(length.out))
+  if (sum(status) != 2L)
+    stop("exactly two of 'to', 'by' and 'length.out' / 'along.with' must be specified")
+  if (missing(by)) {
+    from <- unclass(from)
+    to <- unclass(to)
+    res <- seq.int(from, to, length.out = length.out)
+    return(.PCICt(res, attr(from, "cal")))
+  }
+  if (length(by) != 1L)
+    stop("'by' must be of length 1")
+  valid <- 0L
+  if (inherits(by, "difftime")) {
+    by <- switch(attr(by, "units"), secs = 1, mins = 60,
+                 hours = 3600, days = 86400, weeks = 7 * 86400) *
+                   unclass(by)
+  } else if (is.character(by)) {
+    by2 <- strsplit(by, " ", fixed = TRUE)[[1L]]
+    if (length(by2) > 2L || length(by2) < 1L)
+      stop("invalid 'by' string")
+    valid <- pmatch(by2[length(by2)], c("secs", "mins", "hours",
+                                        "days", "weeks", "months", "years", "DSTdays"))
+    if (is.na(valid))
+      stop("invalid string for 'by'")
+    if (valid <= 5L) {
+      by <- c(1, 60, 3600, 86400, 7 * 86400)[valid]
+      if (length(by2) == 2L)
+        by <- by * as.integer(by2[1L])
+    }
+    else by <- if (length(by2) == 2L)
+      as.integer(by2[1L])
+    else 1
+  }
+  else if (!is.numeric(by))
+    stop("invalid mode for 'by'")
+  if (is.na(by))
+    stop("'by' is NA")
+  if (valid <= 5L) {
+    from <- unclass(from)
+    if (!is.null(length.out))
+      res <- seq.int(from, by = by, length.out = length.out)
+    else {
+      to0 <- unclass(to)
+      res <- seq.int(0, to0 - from, by) + from
+    }
+    return(.PCICt(res, attr(from, "cal")))
+  } else {
+    r1 <- as.POSIXlt(from)
+    if (valid == 7L) {
+      if (missing(to)) {
+        yr <- seq.int(r1$year, by = by, length.out = length.out)
+      } else {
+        to <- as.POSIXlt(to)
+        yr <- seq.int(r1$year, to$year, by)
+      }
+      r1$year <- yr
+    } else if (valid == 6L) {
+      if (missing(to)) {
+        mon <- seq.int(r1$mon, by = by, length.out = length.out)
+      } else {
+        to0 <- as.POSIXlt(to)
+        mon <- seq.int(r1$mon, 12 * (to0$year - r1$year) +
+                       to0$mon, by)
+      }
+      r1$mon <- mon
+    } else if (valid == 8L) {
+      if (!missing(to)) {
+        length.out <- 2L + floor((unclass(to) -
+                                  unclass(from))/86400)
+      }
+      r1$mday <- seq.int(r1$mday, by = by, length.out = length.out)
+    }
+    r1$isdst <- -1L
+    res <- as.PCICt(r1, attr(from, "cal"))
+    if (!missing(to)) {
+      res <- if (by > 0)
+        res[res <= to]
+      else res[res >= to]
+    }
+    res
+  }
 }
 
 trunc.PCICt <- function(x, units = c("secs", "mins", "hours", "days"), ...) {
@@ -85,6 +188,15 @@ trunc.PCICt <- function(x, units = c("secs", "mins", "hours", "days"), ...) {
       val <- floor(val / round.to) * round.to
       class(val) <- class(x)
       return(copy.atts.PCICt(x, val))
+}
+
+round.PCICt <- function (x, digits = c("secs", "mins", "hours", "days")) {
+  if (is.numeric(digits) && digits == 0)
+    digits <- "secs"
+  digits <- match.arg(digits)
+  x <- x + switch(digits, secs = 0.5, mins = 30, hours = 1800,
+                  days = 43200)
+  trunc(x, units = digits)
 }
 
 copy.atts.PCICt <- function(from, to) {
@@ -118,12 +230,19 @@ as.PCICt <- function(x, cal, ...) {
 }
 
 as.character.PCICt <- function(x, ...) {
-  if(attr(x, "dpy") == 360) {
+  if(!is.null(attr(x, "dpy")) && attr(x, "dpy") == 360) {
     format.POSIXlt.360(as.POSIXlt(x), ...)
   } else {
     x <- NextMethod()
     x
   }
+}
+
+unique.PCICt <- function(x, incomparables = FALSE, fromLast = FALSE, ...) {
+  if (!inherits(x, "PCICt"))
+    stop("wrong class")
+  z <- unique(unclass(x), incomparables, fromLast, ...)
+  return(copy.atts.PCICt(x, z))
 }
 
 summary.PCICt <- function (object, digits = 15, ...) {
@@ -141,7 +260,7 @@ summary.PCICt <- function (object, digits = 15, ...) {
 format.PCICt <- function(x, format="", tz="", usetz=FALSE, ...) {
   if (!inherits(x, "PCICt"))
     stop("wrong class")
-  if(attr(x, "dpy") == 360) {
+  if(!is.null(attr(x, "dpy")) && attr(x, "dpy") == 360) {
     structure(format.POSIXlt.360(as.POSIXlt(x, tz), format,
                              ...), names = names(x))
   } else {
@@ -319,7 +438,7 @@ as.POSIXct.PCICt <- function(x, tz="", ...) {
 }
 
 cut.PCICt <- function (x, breaks, labels = NULL, start.on.monday = TRUE, right = FALSE, ...) {
-  stopifnot(attr(x, "cal") != "360" && attr(x, "cal") != "360_day");
+  stopifnot(is.null(attr(x, "dpy")) || attr(x, "dpy") != 360)
 
   cut.POSIXt(as.POSIXct(x), breaks, labels, start.on.monday, right, ...)
 }
@@ -344,4 +463,76 @@ julian.PCICt <- function (x, origin=NULL, ...) {
 
   res <- difftime(x, origin, units = "days")
   structure(res, origin = origin)
+}
+
+get.sec.incr <- function(x, secs, incr=1, mul=1.1) {
+  if(length(secs) == 0)
+    NA
+
+  if(mul * (incr * secs[1]) > x)
+    incr
+  else
+    get.sec.incr(x, secs[-1], incr * secs[1], mul)
+}
+
+axis.PCICt <- function(side, x, at, format, labels = TRUE, ...) {
+  mat <- missing(at) || is.null(at)
+  if (!mat)
+    x <- as.PCICt(at)
+  else
+    x <- as.PCICt(x)
+
+  range <- par("usr")[if (side%%2) 1L:2L else 3L:4L]
+
+  d <- range[2L] - range[1L]
+  z <- c(.PCICt(range, cal=attr(x, "cal")), x[is.finite(x)])
+
+  sc <- get.sec.incr(d, c(60, 60, 24, 7))
+  if(missing(format) && !is.na(sc))
+    format <- switch(as.character(sc), "1"="%S", "60"="%M:%S", "3600"="%H:%M", "86400"="%a %H:%M", "604800"="%a")
+
+  if (d < 60 * 60 * 24 * 50) {
+    zz <- pretty(z/sc)
+    z <- zz * sc
+    if (sc == 60 * 60 * 24)
+      z <- round(z, "days")
+    if (missing(format))
+      format <- "%b %d"
+  } else if (d < 1.1 * 60 * 60 * 24 * 365) {
+    zz <- as.POSIXlt(z)
+    zz$mday <- zz$wday <- zz$yday <- 1
+    zz$isdst <- -1
+    zz$hour <- zz$min <- zz$sec <- 0
+    zz$mon <- pretty(zz$mon)
+    m <- length(zz$mon)
+    M <- 2 * m
+    m <- rep.int(zz$year[1L], m)
+    zz$year <- c(m, m + 1)
+    zz <- lapply(zz, function(x) rep(x, length.out = M))
+    z <- as.PCICt(zz, attr(x, "cal"))
+    if (missing(format))
+      format <- "%b"
+  } else {
+    zz <- as.POSIXlt(z)
+    zz$mday <- zz$wday <- zz$yday <- 1
+    zz$isdst <- -1
+    zz$mon <- zz$hour <- zz$min <- zz$sec <- 0
+    zz$year <- pretty(zz$year)
+    M <- length(zz$year)
+    zz <- lapply(zz, function(x) rep(x, length.out = M))
+    z <- as.PCICt(.POSIXlt(zz), attr(x, "cal"))
+    if (missing(format))
+      format <- "%Y"
+  }
+  if (!mat)
+    z <- x[is.finite(x)]
+  keep <- z >= range[1L] & z <= range[2L]
+  z <- z[keep]
+  if (!is.logical(labels))
+    labels <- labels[keep]
+  else if (identical(labels, TRUE))
+    labels <- format(z, format = format)
+  else if (identical(labels, FALSE))
+    labels <- rep("", length(z))
+  axis(side, at = z, labels = labels, ...)
 }
