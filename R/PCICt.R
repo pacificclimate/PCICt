@@ -10,17 +10,21 @@ setOldClass("PCICt")
 PCICt.get.months <- function(cal) {
   m.365 <- c(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
   m.360 <- c(30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30)
-  switch(cal, "365_day"=m.365, "360_day"=m.360, "365"=m.365, "360"=m.360)
+  switch(cal, "365"=m.365, "360"=m.360)
 }
 
 dpy.for.cal <- function(cal) {
-  switch(cal, "365_day"=365, "360_day"=360, "365"=365, "360"=360)
+  switch(cal, "365"=365, "360"=360)
 }
 
 .PCICt <- function(x, cal) {
+  cal.list <- c("365_day", "365", "noleap", "360_day", "360", "gregorian", "standard", "proleptic_gregorian")
+  cal.map <- c("365", "365", "365", "360", "360", "gregorian", "gregorian", "proleptic_gregorian")
   if(missing(cal)) stop("Can't create a PCICt with no calendar type")
-  ## FIXME: Add check for sane calendar type.
-  structure(x, cal=cal, months=PCICt.get.months(cal), class=c("PCICt", "POSIXct", "POSIXt"), dpy=dpy.for.cal(cal), tzone="GMT", units="secs")
+  if(!cal %in% cal.list) stop(paste("Calendar type not one of", paste(cal.list, sep=", ")))
+  cal.cleaned <- cal.map[cal.list %in% cal]
+
+  structure(x, cal=cal.cleaned, months=PCICt.get.months(cal.cleaned), class=c("PCICt", "POSIXct", "POSIXt"), dpy=dpy.for.cal(cal.cleaned), tzone="GMT", units="secs")
 }
 
 range.PCICt <- function(..., na.rm=FALSE) {
@@ -39,14 +43,16 @@ c.PCICt <- function(..., recursive=FALSE) {
   .PCICt(c(unlist(lapply(list(...), unclass))), cal)
 }
 
-## FIXME: Broken for difftime objects
 `+.PCICt` <- `-.PCICt` <- Ops.PCICt <- function (e1, e2){
-  cal <- attr(e1, "cal")
-  if(inherits(e2, "POSIXt")) {
-    stopifnot(inherits(e2, "PCICt") & attr(e1, "cal") == attr(e2, "cal"))
+  cal <- ifelse(inherits(e1, "PCICt"), cal <- attr(e1, "cal"), cal <- attr(e2, "cal"))
+  if(inherits(e2, "PCICt")) {
+    stopifnot(cal == attr(e2, "cal"))
     class(e2) <- c("POSIXct", "POSIXt")
   }
-  class(e1) <- c("POSIXct", "POSIXt")
+  if(inherits(e1, "PCICt")) {
+    stopifnot(cal == attr(e1, "cal"))
+    class(e1) <- c("POSIXct", "POSIXt")
+  }
   x <- NextMethod()
   if(inherits(x, "POSIXct")) {
     x <- copy.atts.PCICt(e1, x)
@@ -150,8 +156,8 @@ seq.PCICt <- function(from, to, by, length.out = NULL, along.with = NULL, ...) {
       if (missing(to)) {
         yr <- seq.int(r1$year, by = by, length.out = length.out)
       } else {
-        to <- as.POSIXlt(to)
-        yr <- seq.int(r1$year, to$year, by)
+        to0 <- as.POSIXlt(to)
+        yr <- seq.int(r1$year, to0$year, by)
       }
       r1$year <- yr
     } else if (valid == 6L) {
@@ -226,6 +232,7 @@ copy.atts.PCICt <- function(from, to) {
 }
 
 as.PCICt <- function(x, cal, ...) {
+  if(missing(cal)) stop("Can't create a PCICt with no calendar type")
   UseMethod("as.PCICt")
 }
 
@@ -382,8 +389,8 @@ as.PCICt.POSIXlt <- function(x, cal, ...) {
     months <- PCICt.get.months(cal)
     months.off <- cumsum(c(0, months[1:(length(months) - 1)]))
     seconds.per.hour <- 3600
-    return(.PCICt((x$year + origin.year.POSIXlt - origin.year) * year.length * seconds.per.day +
-                  months.off[x$mon + 1] * seconds.per.day + (x$mday - 1) * seconds.per.day + x$hour * seconds.per.hour + x$min * 60 + x$sec, cal=cal))
+    return(.PCICt((x$year + origin.year.POSIXlt - origin.year + floor(x$mon / 12)) * year.length * seconds.per.day +
+                  months.off[(x$mon %% 12) + 1] * seconds.per.day + (x$mday - 1) * seconds.per.day + x$hour * seconds.per.hour + x$min * 60 + x$sec, cal=cal))
   }
 }
 
@@ -395,6 +402,7 @@ as.PCICt.POSIXct <- function(x, cal, ...) {
   }
 }
 
+## FIXME: Better NA handling
 as.POSIXlt.PCICt <- function(x, tz="", ...) {
   seconds.per.day <- 86400
   seconds.per.hour <- 3600
