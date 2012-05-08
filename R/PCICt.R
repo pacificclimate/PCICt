@@ -1,5 +1,6 @@
 origin.year <- 1970
 origin.year.POSIXlt <- 1900
+class.list <- c("PCICt")
 
 setOldClass("PCICt")
 
@@ -24,7 +25,7 @@ dpy.for.cal <- function(cal) {
   if(!cal %in% cal.list) stop(paste("Calendar type not one of", paste(cal.list, sep=", ")))
   cal.cleaned <- cal.map[cal.list %in% cal]
 
-  structure(x, cal=cal.cleaned, months=PCICt.get.months(cal.cleaned), class=c("PCICt", "POSIXct", "POSIXt"), dpy=dpy.for.cal(cal.cleaned), tzone="GMT", units="secs")
+  structure(x, cal=cal.cleaned, months=PCICt.get.months(cal.cleaned), class=class.list, dpy=dpy.for.cal(cal.cleaned), tzone="GMT", units="secs")
 }
 
 range.PCICt <- function(..., na.rm=FALSE) {
@@ -33,7 +34,7 @@ range.PCICt <- function(..., na.rm=FALSE) {
   args.flat <- unlist(args)
   ret <- c(min(args.flat, na.rm=na.rm), max(args.flat, na.rm=na.rm))
   ret <- copy.atts.PCICt(args[[1]], ret)
-  class(ret) <- c("PCICt", "POSIXct", "POSIXt")
+  class(ret) <- class.list
   return(ret)
 }
 
@@ -56,7 +57,7 @@ c.PCICt <- function(..., recursive=FALSE) {
   x <- NextMethod()
   if(inherits(x, "POSIXct")) {
     x <- copy.atts.PCICt(e1, x)
-    class(x) <- c("PCICt", "POSIXct", "POSIXt")
+    class(x) <- class.list
   }
   return(x)
 }
@@ -237,12 +238,7 @@ as.PCICt <- function(x, cal, ...) {
 }
 
 as.character.PCICt <- function(x, ...) {
-  if(!is.null(attr(x, "dpy")) && attr(x, "dpy") == 360) {
-    format.POSIXlt.360(as.POSIXlt(x), ...)
-  } else {
-    x <- NextMethod()
-    x
-  }
+  format.PCICt(x, ...)
 }
 
 unique.PCICt <- function(x, incomparables = FALSE, fromLast = FALSE, ...) {
@@ -304,7 +300,8 @@ format.POSIXlt.360 <- function(x, format="") {
       np <- 0L
     else np <- min(6L, np)
     if (np >= 1L)
-      for (i in seq <- length(np) - 1L) if (all(abs(secs - round(secs, i)) < 1e-06)) {
+      for (i in seq_len(np) - 1L)
+        if (all(abs(secs - round(secs, i)) < 1e-06)) {
         np <- i
         break
       }
@@ -346,7 +343,7 @@ as.PCICt.default <- function(x, cal, ...) {
                all(!is.na(strptime.360(xx, f <- "%Y-%m-%d"))) ||
                all(!is.na(strptime.360(xx, f <- "%Y/%m/%d"))))
         res <- strptime.360(x, f)
-      attr(res, "tzone") <- tz
+      if(missing(res)) stop("character string is not in a standard unambiguous format")
       return(as.PCICt(res, cal, ...))
     } else {
       return(as.PCICt(as.POSIXlt(x, tz, ...), cal, ...))
@@ -474,39 +471,43 @@ julian.PCICt <- function (x, origin=NULL, ...) {
 }
 
 get.sec.incr <- function(x, secs, incr=1, mul=1.1) {
-  if(length(secs) == 0)
-    NA
-
-  if(mul * (incr * secs[1]) > x)
+  if(length(secs) == 0 || mul * (incr * secs[1]) > x)
     incr
   else
     get.sec.incr(x, secs[-1], incr * secs[1], mul)
 }
 
+Axis.PCICt <- function(x = NULL, at = NULL, ..., side, labels = TRUE) {
+  axis.PCICt(side = side, x = x, at = at, labels = labels, ...)
+}
+
+get.avg.dpy <- function(x) {
+  ifelse(is.null(attr(x, "dpy")), 365.25, attr(x, "dpy"))
+}
+
 axis.PCICt <- function(side, x, at, format, labels = TRUE, ...) {
   mat <- missing(at) || is.null(at)
+  mft <- missing(format) || is.null(format)
   if (!mat)
-    x <- as.PCICt(at)
-  else
-    x <- as.PCICt(x)
+    x <- at
 
   range <- par("usr")[if (side%%2) 1L:2L else 3L:4L]
 
   d <- range[2L] - range[1L]
-  z <- c(.PCICt(range, cal=attr(x, "cal")), x[is.finite(x)])
+  z <- c(as.PCICt(range, cal=attr(x, "cal"), origin="1970-01-01"), x[is.finite(x)])
 
   sc <- get.sec.incr(d, c(60, 60, 24, 7))
-  if(missing(format) && !is.na(sc))
+  if(mft && !is.na(sc))
     format <- switch(as.character(sc), "1"="%S", "60"="%M:%S", "3600"="%H:%M", "86400"="%a %H:%M", "604800"="%a")
 
   if (d < 60 * 60 * 24 * 50) {
-    zz <- pretty(z/sc)
-    z <- zz * sc
-    if (sc == 60 * 60 * 24)
+    zz <- pretty(unclass(z)/sc)
+    z <- .PCICt(zz * sc, cal=attr(x, "cal"))
+    if (!is.na(sc) && sc == 60 * 60 * 24)
       z <- round(z, "days")
-    if (missing(format))
+    if (mft)
       format <- "%b %d"
-  } else if (d < 1.1 * 60 * 60 * 24 * 365) {
+  } else if (d < 1.1 * 60 * 60 * 24 * get.avg.dpy(x)) {
     zz <- as.POSIXlt(z)
     zz$mday <- zz$wday <- zz$yday <- 1
     zz$isdst <- -1
@@ -518,7 +519,7 @@ axis.PCICt <- function(side, x, at, format, labels = TRUE, ...) {
     zz$year <- c(m, m + 1)
     zz <- lapply(zz, function(x) rep(x, length.out = M))
     z <- as.PCICt(zz, attr(x, "cal"))
-    if (missing(format))
+    if (mft)
       format <- "%b"
   } else {
     zz <- as.POSIXlt(z)
@@ -529,11 +530,12 @@ axis.PCICt <- function(side, x, at, format, labels = TRUE, ...) {
     M <- length(zz$year)
     zz <- lapply(zz, function(x) rep(x, length.out = M))
     z <- as.PCICt(.POSIXlt(zz), attr(x, "cal"))
-    if (missing(format))
+    if (mft)
       format <- "%Y"
   }
   if (!mat)
     z <- x[is.finite(x)]
+
   keep <- z >= range[1L] & z <= range[2L]
   z <- z[keep]
   if (!is.logical(labels))
@@ -542,5 +544,118 @@ axis.PCICt <- function(side, x, at, format, labels = TRUE, ...) {
     labels <- format(z, format = format)
   else if (identical(labels, FALSE))
     labels <- rep("", length(z))
-  axis(side, at = z, labels = labels, ...)
+  
+  axis(side, at = unclass(z), labels = labels, ...)
+}
+
+pretty.PCICt <- function(x, n = 5, min.n = n %/% 2, sep = " ", ...) {
+  zz <- range(x, na.rm = TRUE)
+  xspan <- as.numeric(diff(zz), units = "secs")
+  if (diff(as.numeric(zz)) == 0) # one value only
+    zz <- zz + c(0,60)
+  ## specify the set of pretty timesteps
+  MIN <- 60
+  HOUR <- MIN * 60
+  DAY <- HOUR * 24
+  YEAR <- DAY * get.avg.dpy(x)
+  MONTH <- YEAR / 12
+  steps <-
+    list("1 sec" = list(1, format = "%S", start = "mins"),
+         "2 secs" = list(2),
+         "5 secs" = list(5),
+         "10 secs" = list(10),
+         "15 secs" = list(15),
+         "30 secs" = list(30, format = "%H:%M:%S"),
+         "1 min" = list(1*MIN, format = "%H:%M"),
+         "2 mins" = list(2*MIN, start = "hours"),
+         "5 mins" = list(5*MIN),
+         "10 mins" = list(10*MIN),
+         "15 mins" = list(15*MIN),
+         "30 mins" = list(30*MIN),
+         ## "1 hour" = list(1*HOUR),
+         "1 hour" = list(1*HOUR, format = if (xspan <= DAY) "%H:%M" else paste("%b %d", "%H:%M", sep = sep)),
+         "3 hours" = list(3*HOUR, start = "days"),
+         "6 hours" = list(6*HOUR, format = paste("%b %d", "%H:%M", sep = sep)),
+         "12 hours" = list(12*HOUR),
+         "1 DSTday" = list(1*DAY, format = paste("%b", "%d", sep = sep)),
+         "2 DSTdays" = list(2*DAY),
+         "1 week" = list(7*DAY, start = "weeks"),
+         "halfmonth" = list(MONTH/2, start = "months"),
+         ## "1 month" = list(1*MONTH, format = "%b"),
+         "1 month" = list(1*MONTH, format = if (xspan < YEAR) "%b" else paste("%b", "%Y", sep = sep)),
+         "3 months" = list(3*MONTH, start = "years"),
+         "6 months" = list(6*MONTH, format = "%Y-%m"),
+         "1 year" = list(1*YEAR, format = "%Y"),
+         "2 years" = list(2*YEAR, start = "decades"),
+         "5 years" = list(5*YEAR),
+         "10 years" = list(10*YEAR),
+         "20 years" = list(20*YEAR, start = "centuries"),
+         "50 years" = list(50*YEAR),
+         "100 years" = list(100*YEAR),
+         "200 years" = list(200*YEAR),
+         "500 years" = list(500*YEAR),
+         "1000 years" = list(1000*YEAR))
+  ## carry forward 'format' and 'start' to following steps
+  for (i in seq_along(steps)) {
+    if (is.null(steps[[i]]$format))
+      steps[[i]]$format <- steps[[i-1]]$format
+    if (is.null(steps[[i]]$start))
+      steps[[i]]$start <- steps[[i-1]]$start
+    steps[[i]]$spec <- names(steps)[i]
+  }
+  ## crudely work out number of steps in the given interval
+  nsteps <- sapply(steps, function(s) {
+    xspan / s[[1]]
+  })
+  init.i <- which.min(abs(nsteps - n))
+  ## calculate actual number of ticks in the given interval
+  calcSteps <- function(s) {
+    startTime <- trunc(min(zz), units = s$start)
+    if (identical(s$spec, "halfmonth")) {
+      at <- seq(startTime, max(zz), by = "months")
+      at2 <- as.POSIXlt(at)
+      at2$mday <- 15L
+      at3 <- sort(c(at, as.PCICt(at2)))
+      at <- copy.atts.PCICt(at, at3)
+    } else {
+      at <- seq(startTime, max(zz), by = s$spec)
+    }
+    at <- at[(min(zz) <= at) & (at <= max(zz))]
+    at
+  }
+  init.at <- calcSteps(steps[[init.i]])
+  init.n <- length(init.at) - 1L
+  ## bump it up if below acceptable threshold
+  while (init.n < min.n) {
+    init.i <- init.i - 1L
+    if (init.i == 0) stop("range too small for min.n")
+    init.at <- calcSteps(steps[[init.i]])
+    init.n <- length(init.at) - 1L
+  }
+  makeOutput <- function(at, s) {
+    flabels <- format(at, s$format)
+    ans <- as.PCICt(at, cal=attr(x, "cal"))
+    attr(ans, "labels") <- flabels
+    ans
+  }
+  if (init.n == n) ## perfect
+    return(makeOutput(init.at, steps[[init.i]]))
+  if (init.n > n) {
+    ## too many ticks
+    new.i <- init.i + 1L
+    new.i <- min(new.i, length(steps))
+  } else {
+    ## too few ticks
+    new.i <- init.i - 1L
+    new.i <- max(new.i, 1L)
+  }
+  new.at <- calcSteps(steps[[new.i]])
+  new.n <- length(new.at) - 1L
+  ## work out whether new.at or init.at is better
+  if (new.n < min.n)
+    new.n <- -Inf
+  if (abs(new.n - n) < abs(init.n - n))
+    makeOutput(new.at, steps[[new.i]])
+  else
+    makeOutput(init.at, steps[[init.i]])
 }
