@@ -16,7 +16,7 @@
 \method{as}{PCICt}(x, cal, \dots)
 .PCICt(x, cal)
 \method{as.PCICt}{numeric}(x, cal, origin, \dots)
-\method{as.PCICt}{default}(x, cal, \dots)
+\method{as.PCICt}{default}(x, cal, format, \dots)
 \method{as.PCICt}{POSIXlt}(x, cal, \dots)
 \method{as.PCICt}{POSIXct}(x, cal, \dots)
 \method{as.POSIXct}{PCICt}(x, tz="", \dots)
@@ -28,6 +28,7 @@
   \item{cal}{the calendar type.}
   \item{origin}{the origin for a numeric time.}
   \item{tz}{the time zone to put the data in.}
+  \item{format}{the format to parse the date using.}
   \item{...}{any additional arguments passed on.}
 }
 

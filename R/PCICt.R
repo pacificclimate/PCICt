@@ -5,7 +5,6 @@ class.list <- c("PCICt")
 setOldClass("PCICt")
 
 ## TODO:
-## - Implement axis functions (Axis.POSIXt/axis.POSIXct) so that plots will line up nicely
 ## - S4 class to avoid stripping of attributes?
 
 PCICt.get.months <- function(cal) {
@@ -18,13 +17,16 @@ dpy.for.cal <- function(cal) {
   switch(cal, "365"=365, "360"=360)
 }
 
-.PCICt <- function(x, cal) {
-  cal.list <- c("365_day", "365", "noleap", "360_day", "360", "gregorian", "standard", "proleptic_gregorian")
-  cal.map <- c("365", "365", "365", "360", "360", "gregorian", "gregorian", "proleptic_gregorian")
-  if(missing(cal)) stop("Can't create a PCICt with no calendar type")
+clean.cal <- function(cal) {
+  cal.list <- c("365_day", "365", "noleap", "360_day", "360", "gregorian",  "standard", "proleptic_gregorian")
+  cal.map <- c( "365",     "365", "365",    "360",     "360", "gregorian", "gregorian", "proleptic_gregorian")
   if(!cal %in% cal.list) stop(paste("Calendar type not one of", paste(cal.list, sep=", ")))
-  cal.cleaned <- cal.map[cal.list %in% cal]
+  return(cal.map[cal.list %in% cal])
+}
 
+.PCICt <- function(x, cal) {
+  if(missing(cal)) stop("Can't create a PCICt with no calendar type")
+  cal.cleaned <- clean.cal(cal)
   structure(x, cal=cal.cleaned, months=PCICt.get.months(cal.cleaned), class=class.list, dpy=dpy.for.cal(cal.cleaned), tzone="GMT", units="secs")
 }
 
@@ -44,26 +46,65 @@ c.PCICt <- function(..., recursive=FALSE) {
   .PCICt(c(unlist(lapply(list(...), unclass))), cal)
 }
 
-`+.PCICt` <- `-.PCICt` <- Ops.PCICt <- function (e1, e2){
-  cal <- ifelse(inherits(e1, "PCICt"), cal <- attr(e1, "cal"), cal <- attr(e2, "cal"))
+## Use this to drop the 'units' attribute and unclass the object...
+coerceTimeUnit <- function(x) {
+  as.vector(switch(attr(x,"units"),
+                   secs = x, mins = 60*x, hours = 60*60*x,
+                   days = 60*60*24*x, weeks = 60*60*24*7*x))
+}
+
+`+.PCICt` <- function(e1, e2) {
+  if (nargs() == 1) return(e1)
+  ## only valid if one of e1 and e2 is a scalar/difftime
+  if(inherits(e1, "PCICt") && inherits(e2, "PCICt"))
+    stop("binary '+' is not defined for \"PCICt\" objects")
+  if (inherits(e1, "difftime")) e1 <- coerceTimeUnit(e1)
+  if (inherits(e2, "difftime")) e2 <- coerceTimeUnit(e2)
+  .PCICt(unclass(e1) + unclass(e2), cal=attr(e1, "cal"))
+}
+
+`-.PCICt` <- function(e1, e2) {
+  ## need to drop "units" attribute here
+  if(!inherits(e1, "PCICt"))
+    stop("Can only subtract from PCICt objects")
+  if (nargs() == 1) stop("unary '-' is not defined for \"PCICt\" objects")
   if(inherits(e2, "PCICt")) {
-    stopifnot(cal == attr(e2, "cal"))
-    class(e2) <- c("POSIXct", "POSIXt")
+    stopifnot(attr(e1, "cal") == attr(e2, "cal"))
+    return(as.difftime(unclass(e1) - unclass(e2), units="secs"))
   }
-  if(inherits(e1, "PCICt")) {
-    stopifnot(cal == attr(e1, "cal"))
-    class(e1) <- c("POSIXct", "POSIXt")
-  }
-  x <- NextMethod()
-  if(inherits(x, "POSIXct")) {
-    x <- copy.atts.PCICt(e1, x)
-    class(x) <- class.list
-  }
-  return(x)
+  if (inherits(e2, "difftime")) e2 <- coerceTimeUnit(e2)
+  if(!is.null(attr(e2, "class")))
+    stop("can only subtract numbers from PCICt objects")
+  .PCICt(unclass(e1) - e2, cal=attr(e1, "cal"))
+}
+
+Ops.PCICt <- function(e1, e2) {
+  if (nargs() == 1)
+    stop(gettextf("unary '%s' not defined for \"PCICt\" objects",
+                  .Generic), domain = NA)
+
+  PCICt.object <- NULL
+  if(inherits(e1, "PCICt"))
+    PCICt.object <- e1
+  else if(inherits(e2, "PCICt"))
+    PCICt.object <- e2
+  else
+    stop("Can't use PCICt operators on non-PCICt objects")
+
+
+  boolean <- switch(.Generic, "<" = , ">" = , "==" = ,
+                    "!=" = , "<=" = , ">=" = TRUE, FALSE)
+  if (!boolean)
+    stop(gettextf("'%s' not defined for \"PCICt\" objects", .Generic),
+         domain = NA)
+  if(inherits(e1, "POSIXlt") || is.character(e1)) e1 <- as.PCICt(e1, cal=attr(PCICt.object, "cal"))
+  if(inherits(e2, "POSIXlt") || is.character(e1)) e2 <- as.PCICt(e2, cal=attr(PCICt.object, "cal"))
+  stopifnot(attr(e1, "cal") == attr(e2, "cal"))
+  NextMethod(.Generic)
 }
 
 rep.PCICt <- function(x, ...) {
-  y <- NextMethod()
+  y <- rep(unclass(x), ...)
   .PCICt(y, cal=attr(x, "cal"))
 }
 
@@ -72,17 +113,16 @@ mean.PCICt <- function(x, ...) {
 }
 
 min.PCICt <- function(x, ...) {
-  res <- NextMethod()
+  res <- min(unclass(x), ...)
   return(copy.atts.PCICt(x, res))
 }
 
 max.PCICt <- function(x, ...) {
-  res <- NextMethod()
+  res <- max(unclass(x), ...)
   return(copy.atts.PCICt(x, res))
 }
 
 seq.PCICt <- function(from, to, by, length.out = NULL, along.with = NULL, ...) {
-  stopifnot(attr(from, "cal") == attr(to, "cal"))
   if (missing(from))
     stop("'from' must be specified")
   if (!inherits(from, "PCICt"))
@@ -90,6 +130,7 @@ seq.PCICt <- function(from, to, by, length.out = NULL, along.with = NULL, ...) {
   if (length(from) != 1L)
     stop("'from' must be of length 1")
   if (!missing(to)) {
+    stopifnot(attr(from, "cal") == attr(to, "cal"))
     if (!inherits(to, "PCICt"))
       stop("'to' must be a PCICt object")
     if (length(to) != 1)
@@ -211,21 +252,17 @@ copy.atts.PCICt <- function(from, to) {
 }
 
 `[.PCICt` <- function(x, ...) {
-  cl <- class(x)
-  class(x) <- NULL
   val <- NextMethod("[")
   val <- copy.atts.PCICt(x, val)
-  class(val) <- cl
+  class(val) <- class(x)
   val
 }
 
 `[<-.PCICt` <- function (x, ..., value) {
   if (!as.logical(length(value)))
     return(x)
-  origin <- .PCICt(0, attr(x, "cal"))
   stopifnot(class(value) == class(x) & attr(x, "cal") == attr(value, "cal"))
   cl <- oldClass(x)
-  class(x) <- class(value) <- c("POSIXct", "POSIXt")
   x <- NextMethod("[<-")
   x <- copy.atts.PCICt(value, x)
   class(x) <- cl
@@ -263,6 +300,7 @@ summary.PCICt <- function (object, digits = 15, ...) {
 format.PCICt <- function(x, format="", tz="", usetz=FALSE, ...) {
   if (!inherits(x, "PCICt"))
     stop("wrong class")
+  
   if(!is.null(attr(x, "dpy")) && attr(x, "dpy") == 360) {
     structure(format.POSIXlt.360(as.POSIXlt(x, tz), format,
                              ...), names = names(x))
@@ -309,7 +347,7 @@ format.POSIXlt.360 <- function(x, format="") {
       "%Y-%m-%d"
     else if (np == 0L)
       "%Y-%m-%d %H:%M:%S"
-    else paste0("%Y-%m-%d %H:%M:%OS", np)
+    else paste("%Y-%m-%d %H:%M:%OS", np, sep="")
   }
   y <- .Call("do_formatPOSIXlt_360", x, format)
   names(y) <- names(x$year)
@@ -325,17 +363,22 @@ as.POSIXlt.POSIXct.360 <- function(x) {
   .Call("do_asPOSIXlt_360", x, format)
 }
 
-as.PCICt.default <- function(x, cal, ...) {
+as.PCICt.default <- function(x, cal, format, ...) {
   tz <- "GMT"
+  cal.cleaned <- clean.cal(cal)
   if (inherits(x, "PCICt"))
     return(x)
   if (is.character(x) || is.factor(x)) {
     x <- as.character(x)
-    if(cal == "360" || cal == "360_day") {
+    if(cal.cleaned == "360") {
+      if (!missing(format)) {
+        res <- strptime.360(x, format)
+        return(as.PCICt(res, cal, ...))
+      }
       x <- unclass(x)
       xx <- x[!is.na(x)]
       if (!length(xx))
-        res <- strptime(x, "%Y/%m/%d")
+        res <- strptime.360(x, "%Y/%m/%d")
       else if (all(!is.na(strptime.360(xx, f <- "%Y-%m-%d %H:%M:%OS"))) ||
                all(!is.na(strptime.360(xx, f <- "%Y/%m/%d %H:%M:%OS"))) ||
                all(!is.na(strptime.360(xx, f <- "%Y-%m-%d %H:%M"))) ||
@@ -346,7 +389,7 @@ as.PCICt.default <- function(x, cal, ...) {
       if(missing(res)) stop("character string is not in a standard unambiguous format")
       return(as.PCICt(res, cal, ...))
     } else {
-      return(as.PCICt(as.POSIXlt(x, tz, ...), cal, ...))
+      return(as.PCICt(as.POSIXlt(x, tz, format, ...), cal, ...))
     }
   }
   if (is.logical(x) && all(is.na(x)))
@@ -368,22 +411,15 @@ as.PCICt.POSIXlt <- function(x, cal, ...) {
   proleptic.correction <- 0
   seconds.per.day <- 86400
   tz <- "GMT"
-  year.length <- switch(cal, "360_day"=360, "365_day"=365, "365"=365, "360"=360, "noleap"=365, "gregorian"=NULL, "proleptic_gregorian"=NULL, "standard"=NULL)
-  ## FIXME: Add check for sane calendar type.
+  cal.cleaned <- clean.cal(cal)
+  year.length <- dpy.for.cal(cal.cleaned)
 
-  ## Correct calendar output if proleptic gregorian
-  if(cal == "proleptic_gregorian") {
-    year.adjusted <- x$year + origin.year.POSIXlt + as.numeric(x$mon >= 3) - 1
-    diff.days <- floor(year.adjusted / 100) - floor(year.adjusted / 400) - 2
-    diff.days[x$year >= 1582 & x$mon >= 10 & x$day >= 4] <- 0
-    proleptic.correction <- diff.days * seconds.per.day
-  }
   if(is.null(year.length)) {
     d <- as.POSIXct(x, tz="GMT")
     class(d) <- NULL
-    return(.PCICt(d + proleptic.correction, "gregorian"))
+    return(.PCICt(d, "proleptic_gregorian"))
   } else {
-    months <- PCICt.get.months(cal)
+    months <- PCICt.get.months(cal.cleaned)
     months.off <- cumsum(c(0, months[1:(length(months) - 1)]))
     seconds.per.hour <- 3600
     return(.PCICt((x$year + origin.year.POSIXlt - origin.year + floor(x$mon / 12)) * year.length * seconds.per.day +
@@ -392,7 +428,8 @@ as.PCICt.POSIXlt <- function(x, cal, ...) {
 }
 
 as.PCICt.POSIXct <- function(x, cal, ...) {
-  if(cal == "360" || cal == "360_day") {
+  cal.cleaned <- clean.cal(cal)
+  if(cal.cleaned == "360") {
     as.PCICt.POSIXlt(as.POSIXlt.POSIXct.360(x), cal, ...)
   } else {
     as.PCICt.POSIXlt(as.POSIXlt(x), cal, ...)
@@ -436,16 +473,88 @@ as.POSIXlt.PCICt <- function(x, tz="", ...) {
 }
 
 as.POSIXct.PCICt <- function(x, tz="", ...) {
-  if(attr(x, "cal") == "360" || attr(x, "cal") == "360_day") {
+  
+  if(attr(x, "cal") == "360") {
     warning("360-day PCICt objects can't be properly represented by a POSIXct object")
   }
   return(as.POSIXct(as.POSIXlt(x, tz)))
 }
 
 cut.PCICt <- function (x, breaks, labels = NULL, start.on.monday = TRUE, right = FALSE, ...) {
-  stopifnot(is.null(attr(x, "dpy")) || attr(x, "dpy") != 360)
-
-  cut.POSIXt(as.POSIXct(x), breaks, labels, start.on.monday, right, ...)
+  if(!inherits(x, "PCICt")) stop("'x' must be a PCICt object")
+  cal <- attr(x, "cal")
+  
+  if (inherits(breaks, "PCICt") || (is.numeric(breaks) && length(breaks) == 1L)) {
+    ## Dates are already PCICt or specified number of breaks; don't need to do anything
+  } else if(is.character(breaks) && length(breaks) == 1L) {
+    ## Breaks are characters; need to do something.
+    by2 <- strsplit(breaks, " ", fixed=TRUE)[[1L]]
+    if(length(by2) > 2L || length(by2) < 1L)
+      stop("invalid specification of 'breaks'")
+    valid <- pmatch(by2[length(by2)],
+                    c("secs", "mins", "hours", "days", "weeks",
+                      "months", "years", "DSTdays", "quarters"))
+    if(is.na(valid)) stop("invalid specification of 'breaks'")
+    start <- as.POSIXlt(min(x, na.rm=TRUE))
+    incr <- 1
+    if(valid > 1L) { start$sec <- 0L; incr <- 60 }
+    if(valid > 2L) { start$min <- 0L; incr <- 3600 }
+    ## start of day need not be on the same DST, PR#14208
+    if(valid > 3L) { start$hour <- 0L; start$isdst <- -1L; incr <- 86400 }
+    if(valid == 5L) {               # weeks
+      start$mday <- start$mday - start$wday
+      if(start.on.monday)
+        start$mday <- start$mday + ifelse(start$wday > 0L, 1L, -6L)
+      incr <- 7*86400
+    }
+    if(valid == 8L) incr <- 25*3600 # DSTdays
+    if(valid == 6L) {               # months
+      start$mday <- 1L
+      maxx <- max(x, na.rm = TRUE)
+      step <- ifelse(length(by2) == 2L, as.integer(by2[1L]), 1L)
+      end <- as.POSIXlt(maxx + (ifelse(cal == "360", 30, 31) * step * 86400))
+      end$mday <- 1L
+      end$isdst <- -1L
+      breaks <- seq(as.PCICt(start, cal), as.PCICt(end, cal), breaks)
+    } else if(valid == 7L) {        # years
+      start$mon <- 0L
+      start$mday <- 1L
+      maxx <- max(x, na.rm = TRUE)
+      step <- ifelse(length(by2) == 2L, as.integer(by2[1L]), 1L)
+      end <- as.POSIXlt(maxx + (ceiling(get.avg.dpy(x)) * step* 86400))
+      end$mon <- 0L
+      end$mday <- 1L
+      end$isdst <- -1L
+      breaks <- seq(as.PCICt(start, cal), as.PCICt(end, cal), breaks)
+    } else if(valid == 9L) {        # quarters
+      qtr <- rep(c(0L, 3L, 6L, 9L), each = 3L)
+      start$mon <- qtr[start$mon + 1L]
+      start$mday <- 1L
+      maxx <- max(x, na.rm = TRUE)
+      step <- ifelse(length(by2) == 2L, as.integer(by2[1L]), 1L)
+      end <- as.POSIXlt(maxx + (floor(get.avg.dpy(x) / 4) * step * 86400))
+      end$mon <- qtr[end$mon + 1L]
+      end$mday <- 1L
+      end$isdst <- -1L
+      breaks <- seq(as.PCICt(start, cal), as.PCICt(end, cal), paste(step * 3, "months"))
+      ## 90-93 days ahead could give an empty level, so
+      lb <- length(breaks)
+      if(maxx < breaks[lb-1]) breaks <- breaks[-lb]
+    } else {                        # weeks or shorter
+      if (length(by2) == 2L) incr <- incr * as.integer(by2[1L])
+      maxx <- max(x, na.rm = TRUE)
+      breaks <- seq(as.PCICt(start, cal), maxx + incr, breaks)
+      breaks <- breaks[seq_len(1+max(which(breaks <= maxx)))]
+    }
+  } else stop("invalid specification of 'breaks'")
+  res <- cut(unclass(x), unclass(breaks), labels = labels,
+             right = right, ...)
+  if(is.null(labels)) {
+    levels(res) <-
+      as.character(if (is.numeric(breaks)) x[!duplicated(res)]
+      else breaks[-length(breaks)])
+  }
+  res
 }
 
 diff.PCICt <- function (x, lag = 1L, differences = 1L, ...) {

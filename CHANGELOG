@@ -1,3 +1,6 @@
+0.5-2: RESULTS CHANGE: Default gregorian calendar is proleptic; corrections applied are invalid. "Correction" code removed.
+       Minor change: Add checking for calendar to operators.
+
 0.5-1: API CHANGE: as.PCICt.numeric's argument order has changed
        RESULTS CHANGE: Modified code to make 360-day calendars have 12 30-day months.
 
