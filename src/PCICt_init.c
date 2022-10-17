@@ -10,8 +10,8 @@ extern SEXP do_formatPOSIXlt_360(SEXP, SEXP);
 extern SEXP do_strptime_360(SEXP, SEXP);
 
 static const R_CallMethodDef CallEntries[] = {
-    {"do_asPOSIXct_360",     (DL_FUNC) &do_asPOSIXct_360,     2},
-    {"do_asPOSIXlt_360",     (DL_FUNC) &do_asPOSIXlt_360,     2},
+    {"do_asPOSIXct_360",     (DL_FUNC) &do_asPOSIXct_360,     1},
+    {"do_asPOSIXlt_360",     (DL_FUNC) &do_asPOSIXlt_360,     1},
     {"do_formatPOSIXlt_360", (DL_FUNC) &do_formatPOSIXlt_360, 2},
     {"do_strptime_360",      (DL_FUNC) &do_strptime_360,      2},
     {NULL, NULL, 0}
