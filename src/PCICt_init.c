@@ -4,8 +4,8 @@
 #include <R_ext/Rdynload.h>
 
 /* .Call calls */
-extern SEXP do_asPOSIXct_360(SEXP, SEXP);
-extern SEXP do_asPOSIXlt_360(SEXP, SEXP);
+extern SEXP do_asPOSIXct_360(SEXP);
+extern SEXP do_asPOSIXlt_360(SEXP);
 extern SEXP do_formatPOSIXlt_360(SEXP, SEXP);
 extern SEXP do_strptime_360(SEXP, SEXP);
 
