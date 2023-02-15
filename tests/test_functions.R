@@ -139,6 +139,20 @@ PCICt.test.summary <- function() {
 }
 
 PCICt.test.format <- function() {
+  date.360 <- as.PCICt("2012-02-28 12:34:56.7", cal="360")
+
+  test.args <- list(
+      list(),
+      list(justify="centre", width=12),
+      list(justify="left", width=12),
+      list(justify="centre", width=12, digits=6)
+      )
+  results <- c("2012-02-28", " 2012-02-28 ", "2012-02-28  ", " 2012-02-28 ")
+
+  for(i in seq_along(test.args)) {
+      print(paste(as.character(test.args[[i]]), '==', results[i]))
+      checkEquals(do.call(format, c(list(date.360, format="%Y-%m-%d"), test.args[[i]])), results[i])
+  }
 }
 
 PCICt.test.as.POSIXlt <- function() {

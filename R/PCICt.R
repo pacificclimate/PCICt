@@ -326,7 +326,7 @@ strptime.360 <- function(x, format) {
   .Call("do_strptime_360", x, format)
 }
 
-format.POSIXlt.360 <- function(x, format="") {
+format.POSIXlt.360 <- function(x, format="", ...) {
   if (!inherits(x, "POSIXlt"))
     stop("wrong class")
   if (format == "") {
@@ -351,8 +351,7 @@ format.POSIXlt.360 <- function(x, format="") {
   }
   y <- .Call("do_formatPOSIXlt_360", x, format)
   names(y) <- names(x$year)
-  y
-  
+  format(y, ...)
 }
 
 as.POSIXct.POSIXlt.360 <- function(x) {
