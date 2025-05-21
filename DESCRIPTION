@@ -1,6 +1,6 @@
 Package: PCICt
 Version: 0.5-5.0
-Date: 2023-02-13
+Date: 2025-05-21
 Title: Implementation of POSIXct Work-Alike for 365 and 360 Day
         Calendars
 Authors@R:
